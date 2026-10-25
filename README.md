@@ -171,7 +171,7 @@ These served as design references; Spark's dashboard was developed for this proj
 
 ## AI Tools Disclosure
 
-GPT Arshna.ai and Claude were used minimally for ideation and debugging assistance, primarily to explore ideas and resolve specific issues with AI serving only as a limited supporting tool.
+GPT and Arshna.ai were used minimally for ideation and debugging assistance, primarily to explore ideas and resolve specific issues with AI serving only as a limited supporting tool.
 
 ## Limitations
 
