@@ -143,3 +143,34 @@ def test_calculates_error_metrics():
 def test_rejects_invalid_decision_time(decision_time):
     with pytest.raises(ValueError):
         compare_forecasts([], [], decision_time)
+
+def test_aligns_half_hour_actuals_with_hourly_forecast():
+    actuals = [
+        {
+            "fuelType": "WIND",
+            "startTime": "2026-01-10T12:00:00Z",
+            "generation": 100,
+        },
+        {
+            "fuelType": "WIND",
+            "startTime": "2026-01-10T12:30:00Z",
+            "generation": 200,
+        },
+    ]
+
+    forecasts = [
+        {
+            "startTime": "2026-01-10T12:00:00Z",
+            "publishTime": "2026-01-09T09:00:00Z",
+            "generation": 160,
+        }
+    ]
+
+    result = compare_forecasts(actuals, forecasts)
+
+    assert result["comparison_resolution"] == "hourly"
+    assert result["matched_intervals"] == 1
+    assert result["intervals"][0]["actual"] == 150
+    assert result["intervals"][0]["forecast"] == 160
+    assert result["metrics"]["mae"] == 10
+    assert result["metrics"]["bias"] == 10

@@ -38,6 +38,7 @@ def compare_forecasts(
             continue
 
     forecasts_by_time = {}
+    forecast_minutes = set()
 
     for record in forecast_records:
         start_time = record.get("startTime")
@@ -54,41 +55,62 @@ def compare_forecasts(
         except (TypeError, ValueError):
             continue
 
-        if target_time not in forecasts_by_time:
-            forecasts_by_time[target_time] = []
-
-        forecasts_by_time[target_time].append(
+        forecast_minutes.add(target_time.minute)
+        forecasts_by_time.setdefault(target_time, []).append(
             {
                 "published_at": published_at,
                 "generation": predicted,
             }
         )
 
+    hourly_mode = (
+        forecast_minutes == {0}
+        and any(timestamp.minute == 30 for timestamp in actual_by_time)
+    )
+
+    if hourly_mode:
+        actual_groups = {}
+
+        for timestamp, generation in actual_by_time.items():
+            hour_start = timestamp.replace(minute=0, second=0, microsecond=0)
+            actual_groups.setdefault(hour_start, []).append(
+                (timestamp, generation)
+            )
+
+        comparison_actuals = {}
+
+        for hour_start, readings in actual_groups.items():
+            readings.sort(key=lambda item: item[0])
+
+            if (
+                len(readings) == 2
+                and [item[0].minute for item in readings] == [0, 30]
+            ):
+                comparison_actuals[hour_start] = mean(
+                    item[1] for item in readings
+                )
+    else:
+        comparison_actuals = actual_by_time
+
     comparisons = []
 
-    for target_time in sorted(actual_by_time):
-        delivery_day = target_time.date()
+    for target_time in sorted(comparison_actuals):
         cutoff = utc_timestamp(
-            f"{delivery_day.isoformat()}T{hour:02d}:{minute:02d}:00Z"
+            f"{target_time.date().isoformat()}T{hour:02d}:{minute:02d}:00Z"
         ) - timedelta(days=1)
 
-        eligible_forecasts = [
+        eligible = [
             forecast
             for forecast in forecasts_by_time.get(target_time, [])
             if forecast["published_at"] <= cutoff
         ]
 
-        if not eligible_forecasts:
+        if not eligible:
             continue
 
-        selected = max(
-            eligible_forecasts,
-            key=lambda forecast: forecast["published_at"],
-        )
-
-        actual = actual_by_time[target_time]
+        selected = max(eligible, key=lambda item: item["published_at"])
+        actual = comparison_actuals[target_time]
         predicted = selected["generation"]
-        error = predicted - actual
 
         comparisons.append(
             {
@@ -97,13 +119,14 @@ def compare_forecasts(
                 "publishTime": selected["published_at"].isoformat(),
                 "actual": actual,
                 "forecast": predicted,
-                "error": error,
+                "error": predicted - actual,
             }
         )
 
     if not comparisons:
         return {
             "decision_time_utc": decision_time_utc,
+            "comparison_resolution": "hourly" if hourly_mode else "source_interval",
             "matched_intervals": 0,
             "metrics": None,
             "intervals": [],
@@ -113,6 +136,7 @@ def compare_forecasts(
 
     return {
         "decision_time_utc": decision_time_utc,
+        "comparison_resolution": "hourly" if hourly_mode else "source_interval",
         "matched_intervals": len(comparisons),
         "metrics": {
             "mae": mean(abs(error) for error in errors),

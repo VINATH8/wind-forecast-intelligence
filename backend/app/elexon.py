@@ -1,15 +1,22 @@
-from datetime import datetime, timezone
+
+from datetime import datetime,timedelta, timezone
+
 import httpx
+
 BASE_URL = "https://data.elexon.co.uk/bmrs/api/v1"
+
 DATASETS = {
     "actuals": "FUELHH",
     "forecasts": "WINDFOR",
 }
 
+
 def utc_timestamp(value: str) -> datetime:
     parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+
     if parsed.tzinfo is None:
         raise ValueError("Timestamps must include a timezone.")
+
     return parsed.astimezone(timezone.utc)
 
 
@@ -24,13 +31,24 @@ def fetch_dataset(
     if start >= end:
         raise ValueError("Start must be earlier than end.")
 
-    params = {
-        "from": start.isoformat().replace("+00:00", "Z"),
-        "to": end.isoformat().replace("+00:00", "Z"),
-    }
+    if start.tzinfo is None or end.tzinfo is None:
+        raise ValueError("Start and end must include timezones.")
+
+    start = start.astimezone(timezone.utc)
+    end = end.astimezone(timezone.utc)
 
     if dataset == "actuals":
-        params["fuelType"] = "WIND"
+        last_included_date = (end - timedelta(microseconds=1)).date()
+        params = {
+        "settlementDateFrom": start.date().isoformat(),
+        "settlementDateTo": last_included_date.isoformat(),
+        "fuelType": "WIND",
+    }
+    else:
+        params = {
+            "publishDateTimeFrom": start.isoformat().replace("+00:00", "Z"),
+            "publishDateTimeTo": end.isoformat().replace("+00:00", "Z"),
+        }
 
     url = f"{BASE_URL}/datasets/{DATASETS[dataset]}/stream"
 
